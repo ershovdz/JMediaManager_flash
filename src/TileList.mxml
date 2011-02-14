@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:TileList xmlns:mx="http://www.adobe.com/2006/mxml">
+	<mx:Script>
+		<![CDATA[
+			import mx.controls.listClasses.IListItemRenderer;
+			import mx.collections.ArrayCollection;
+			import mx.controls.listClasses.ListBase;
+			
+			public static var SELECTION_LINE_COLOR:Number = 0x000000;
+			public static var SELECTION_LINE_THICKNESS:Number = 1;
+			public static var SELECTION_FILL_COLOR:Number = 0x000000;
+			public static var SELECTION_FILL_OPACITY:Number = .1;
+			
+			private var multipleSelectionAnchor:Point;
+			private var isMultiSelect:Boolean = false;
+			private var selectionBox:Sprite = new Sprite;
+			private var ctrlKey:Boolean = false;
+			private var shiftKey:Boolean = false;
+			
+			override protected function keyDownHandler(event:KeyboardEvent):void
+			{
+				if (event.keyCode == Keyboard.CONTROL)
+				{
+					ctrlKey = true;
+				}
+				if (event.keyCode == Keyboard.SHIFT)
+				{
+					shiftKey = true;
+				}
+				
+				super.keyDownHandler(event);
+			}
+			
+			override protected function keyUpHandler(event:KeyboardEvent):void
+			{
+				if (event.keyCode == Keyboard.CONTROL)
+				{
+					ctrlKey = false;
+				}
+				if (event.keyCode == Keyboard.SHIFT)
+				{
+					shiftKey = false;
+				}
+				
+				super.keyUpHandler(event);
+			}                       
+			
+			override protected function mouseDownHandler(event:MouseEvent):void
+			{
+				super.mouseDownHandler(event);
+				
+				this.ctrlKey = event.ctrlKey;
+				this.shiftKey = event.shiftKey;  
+				
+				if (event.target is mx.controls.listClasses.ListBaseContentHolder)
+				{
+					if (this.ctrlKey == false)
+					{
+						this.clearSelected();
+					}
+					startMultipleSelect(this.mouseX, this.mouseY);
+				}
+				
+			}
+			
+			private function startMultipleSelect(xCoord:Number, yCoord:Number):void
+			{
+				isMultiSelect = true;
+				multipleSelectionAnchor = new Point(xCoord, yCoord);
+				this.addChild(selectionBox);
+				
+				this.addEventListener(MouseEvent.MOUSE_MOVE, mouseMoveHandler);
+				this.stage.addEventListener(MouseEvent.MOUSE_UP, mouseUpHandler);
+			}
+			
+			override protected function mouseMoveHandler(event:MouseEvent):void
+			{
+				if (isMultiSelect)
+				{
+					drawSelectionBox();
+					drawIndicators();
+				}
+				
+				super.mouseMoveHandler(event);
+			}
+			
+			override protected function mouseUpHandler(event:MouseEvent):void
+			{
+				super.mouseUpHandler(event);
+				
+				if (isMultiSelect)
+				{
+					isMultiSelect = false;
+					multipleSelect();
+				}
+				
+			}
+			
+			private function multipleSelect():void
+			{
+				var selected:ArrayCollection = getTilesForSelection();
+				
+				for each (var item:IListItemRenderer in selected)
+				{
+					this.selectItem(item, false, true);
+				}
+				
+				this.selectionBox.graphics.clear();
+				this.removeChild(this.selectionBox);
+			}
+			
+			private function drawSelectionBox():void
+			{
+				this.selectionBox.graphics.clear();
+				this.selectionBox.graphics.lineStyle(SELECTION_LINE_THICKNESS, SELECTION_LINE_COLOR);
+				this.selectionBox.graphics.beginFill(SELECTION_FILL_COLOR, SELECTION_FILL_OPACITY);
+				this.selectionBox.graphics.drawRect(this.multipleSelectionAnchor.x, this.multipleSelectionAnchor.y, this.mouseX-this.multipleSelectionAnchor.x, this.mouseY-this.multipleSelectionAnchor.y);
+				this.selectionBox.graphics.endFill();
+			}
+			
+			private function drawIndicators():void
+			{
+				this.clearIndicators();
+				var index:Number = 0;
+				
+				for (var i:Number = 0; i < this.listItems.length; i++)
+				{                                       
+					for each (var displayObject:DisplayObject in this.listItems[i])
+					{
+						if (displayObject && displayObject.hitTestObject(this.selectionBox) || isSelected(index))
+						{ 
+							this.drawItem(displayObject as IListItemRenderer, true);
+						}
+						index++;
+					}
+				}                               
+			}
+			
+			private function isSelected(index:Number):Boolean
+			{
+				var selected:Boolean = false;
+				
+				if (selectedIndices.indexOf(index) != -1)
+				{
+					selected = true;
+				}
+				return selected;
+			}
+			
+			private function getTilesForSelection():ArrayCollection
+			{
+				var selected:ArrayCollection = new ArrayCollection;
+				
+				for (var i:Number = 0; i < this.listItems.length; i++)
+				{                                       
+					for each (var displayObject:DisplayObject in this.listItems[i])
+					{
+						if (displayObject && displayObject.hitTestObject(this.selectionBox))
+						{
+							selected.addItem(displayObject);
+						}
+					}
+				}
+				
+				return selected;
+			}                       
+		]]>
+	</mx:Script>
+</mx:TileList>

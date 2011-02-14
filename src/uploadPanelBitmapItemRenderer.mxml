@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:VBox xmlns:fx="http://ns.adobe.com/mxml/2009" 
+				xmlns:s="library://ns.adobe.com/flex/spark" 
+				xmlns:mx="library://ns.adobe.com/flex/mx"
+				dataChange="onDataChange(event)"
+				horizontalAlign="center"
+				height="32">
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			
+			private var pic2Resize:Loader;
+			
+			private function onDataChange(event:Event):void {
+				// Чистим всё
+				while(uiComponent.numChildren) uiComponent.removeChildAt(0);
+				
+				if(!data.fileRef) return;
+				
+				try{
+					// Загружаем картинку
+					FileReference(data.fileRef).load();
+					FileReference(data.fileRef).addEventListener ( Event.COMPLETE,onFileRefLoaded);
+				}catch (e:Error){
+					// Одновременно нельзя грузить несколько иконок,
+					// если произошла ошибка, пробуем грузить через 1/5 секунды 
+					var myTimer:Timer = new Timer(400, 1);
+					myTimer.addEventListener("timer", onDataChange);
+					myTimer.start();
+				}
+			}
+			private function onFileRefLoaded(e:Event):void{
+				data.fileRef.removeEventListener ( Event.COMPLETE,onFileRefLoaded);
+				pic2Resize=new Loader();
+				pic2Resize.contentLoaderInfo.addEventListener ( Event.COMPLETE, onPic2ResizeLoaded ) ;
+				pic2Resize.loadBytes(data.fileRef.data);
+			}
+			private function onPic2ResizeLoaded(event:Event):void {
+				pic2Resize.content.scaleX=30/pic2Resize.content.height;
+				pic2Resize.content.scaleY=30/pic2Resize.content.height;
+				pic2Resize.x=-pic2Resize.content.width/2;
+				uiComponent.addChild(pic2Resize);
+			}
+			
+		]]>
+	</fx:Script>
+	<mx:UIComponent id="uiComponent">
+	</mx:UIComponent>
+</mx:VBox>

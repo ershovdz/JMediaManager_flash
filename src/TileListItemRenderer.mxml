@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:VBox xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" 
+		 horizontalAlign="center" verticalAlign="middle" verticalGap="0" width="{componentWidth+4}" maxHeight="{componentHeight+24}" horizontalScrollPolicy="off" verticalScrollPolicy="off" x="0" y="0" height="{componentHeight+24}" dataChange="vbox1_dataChangeHandler(event)" >
+	<fx:Script>
+		<![CDATA[
+			import flash.events.Event;
+			import flash.utils.Dictionary;
+			
+			import mx.controls.SWFLoader;
+			import mx.core.FlexGlobals;
+			import mx.events.FlexEvent;
+			
+			[Bindable]
+			public static var componentWidth:Number=64;
+			[Bindable]
+			public static var componentHeight:Number=64;
+			
+			public static var cashedImages:Dictionary=new Dictionary();
+			//При изменении данных попробовать переназначать Image			
+
+			protected function vbox1_dataChangeHandler(event:FlexEvent):void {
+				if(canvas) canvas.removeAllChildren();
+				
+				var url:String=data.small_url;
+				
+				if (canvas) canvas.setStyle("borderColor", data.borderColor);
+				if(!cashedImages[url]){
+					var img:SWFLoader=new SWFLoader();
+					img.load(url);
+					img.addEventListener(Event.COMPLETE, onImgLoaded);
+				} else {
+					img=cashedImages[url];
+					if(canvas){
+						img.content.scaleX=1;
+						img.content.scaleY=1;
+						var k:Number=Math.max(img.content.width/componentWidth,img.content.height/componentHeight)
+						img.content.width=Math.round(img.content.width/k)-4;
+						img.content.height=Math.round(img.content.height/k)-4;
+						canvas.width=img.content.width+4;
+						canvas.height=img.content.height+4;
+						
+						canvas.addChild(img);
+					}
+				}
+				
+			}
+			
+			private function onImgLoaded(e:Event):void{
+				var img:SWFLoader=SWFLoader(e.target);
+				var k:Number=Math.max(img.content.width/componentWidth,img.content.height/componentHeight)
+				img.content.width=Math.round(img.content.width/k)-4;
+				img.content.height=Math.round(img.content.height/k)-4;
+				canvas.width=img.content.width+4;
+				canvas.height=img.content.height+4;
+				if(canvas) canvas.addChild(img);
+				cashedImages[img.source.substring(0,img.source.indexOf("?"))]=img;
+			}
+
+		]]>
+	</fx:Script>
+	<mx:Canvas id="canvas" width="{componentWidth}" height="{componentHeight}" horizontalScrollPolicy="off" verticalScrollPolicy="off" borderStyle="solid" borderThickness="2" borderColor="{data.borderColor}" clipContent="true" />
+	<control:LabelEditor name="cellEditorNameTF" styleName="labelEditorStyle" textAlign="center" 
+						 xmlns:control="com.jmm.*"  height="20" text="{data.imgtitle}" maxWidth="{componentWidth}" dragStart="{event.preventDefault()}" paddingBottom="0" paddingLeft="0" paddingRight="0" paddingTop="0" change="FlexGlobals.topLevelApplication.propertiesPanel.editorSaveTFValue(event)">
+	</control:LabelEditor>
+</mx:VBox>

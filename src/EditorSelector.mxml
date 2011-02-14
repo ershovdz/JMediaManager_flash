@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:UIComponent xmlns:fx="http://ns.adobe.com/mxml/2009" 
+				xmlns:s="library://ns.adobe.com/flex/spark" 
+				xmlns:mx="library://ns.adobe.com/flex/mx">
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			import flash.events.MouseEvent;
+			import flash.geom.Rectangle;
+			
+			private var rect:Rectangle=new Rectangle(0,0,100,100);
+			private var maxW:Number=100;
+			private var maxH:Number=100;
+			private var currentDraggedBullet:UIComponent;
+			public var propertiesList:Array;
+			
+			private var bullLT:UIComponent;
+			private var bullLB:UIComponent;
+			private var bullRB:UIComponent;
+			private var bullRT:UIComponent;
+			private var centerAlpha:UIComponent;
+			
+			
+			public function redraw(_rect:Rectangle):void{
+				rect=_rect;
+				maxW=rect.width;
+				maxH=rect.height;
+				
+				createBullets();
+				redrawRect();
+			}
+
+			private function createBullets():void{
+				// Удаляем все буллеты
+				while(numChildren) removeChildAt(0);
+				
+				// Рисую центральную пустышку
+				centerAlpha=new UIComponent();
+				centerAlpha.buttonMode=true;
+				centerAlpha.name="centerAlpha";
+				centerAlpha.addEventListener(MouseEvent.MOUSE_DOWN,onBulletStartDrag);
+				redrawCenterAlphaBullet();
+				addChild(centerAlpha);
+				
+				bullLT=createBullet("lt");
+				addChild(bullLT);
+				bullLB=createBullet("lb");
+				addChild(bullLB);
+				bullRT=createBullet("rt");
+				addChild(bullRT);
+				bullRB=createBullet("rb");
+				addChild(bullRB);
+			}
+			
+			private function redrawCenterAlphaBullet():void{
+				// Рисую центральную пустышку
+				centerAlpha.graphics.clear();
+				centerAlpha.graphics.lineStyle(1,0x000000,0);
+				centerAlpha.graphics.beginFill(0x000000,0);
+				centerAlpha.graphics.drawRect(0,0,rect.width,rect.height);
+				centerAlpha.graphics.endFill();
+				centerAlpha.x=rect.x;
+				centerAlpha.y=rect.y;
+			}
+			
+			private function redrawRect(e:Event=null):void{
+				// Перерисовываем рамку
+				graphics.clear();
+				graphics.lineStyle(2,0x000000);
+				graphics.drawRect(rect.x,rect.y,rect.width, rect.height);
+			}
+			
+			private function createBullet(bulletName:String):UIComponent{
+				var bullet:UIComponent=new UIComponent();
+				bullet.buttonMode=true;
+				bullet.name=bulletName;
+				bullet.graphics.clear();
+				bullet.graphics.lineStyle(2,0x000000);
+				bullet.graphics.beginFill(0xffffff);
+				bullet.graphics.drawRect(-4,-4,8,8);
+				bullet.graphics.endFill();
+				bullet.addEventListener(MouseEvent.MOUSE_DOWN,onBulletStartDrag);
+
+				switch(bulletName){
+					case "lt":
+						bullet.x=rect.x;
+						bullet.y=rect.y;
+						break;
+					case "lb":
+						bullet.x=rect.x;
+						bullet.y=rect.y+rect.height;
+						break;
+					case "rt":
+						bullet.x=rect.x+rect.width;
+						bullet.y=rect.y;
+						break;
+					case "rb":
+						bullet.x=rect.x+rect.width;
+						bullet.y=rect.y+rect.height;
+						break;
+					default:
+						break;
+				}
+				return bullet;
+			}
+			
+			private function onBulletStartDrag(e:MouseEvent):void{
+				var minSize:Number=Number(propertiesList[0].minSize);
+				var dragRect:Rectangle;
+				switch(e.currentTarget.name){
+					case "centerAlpha":
+						dragRect=new Rectangle(0,0,maxW-rect.width, maxH-rect.height);
+						break;
+					case "lt":
+						dragRect=new Rectangle(0,0,rect.x+rect.width-minSize, rect.y+rect.height-minSize);
+						break;
+					case "lb":
+						dragRect=new Rectangle(0,rect.y+minSize,rect.x+rect.width-minSize, maxH-rect.y-minSize);
+						break;
+					case "rt":
+						dragRect=new Rectangle(rect.x+minSize,0,maxW-rect.x-minSize, rect.y+rect.height-minSize);
+						break;
+					case "rb":
+						dragRect=new Rectangle(rect.x+minSize,rect.y+minSize,maxW-rect.x-minSize, maxH-rect.y-minSize);
+						break;
+					default:
+						break;
+				}
+				currentDraggedBullet=UIComponent(e.currentTarget);
+				UIComponent(e.currentTarget).startDrag(false,dragRect);
+				
+				this.parent.addEventListener(MouseEvent.MOUSE_UP,onBulletStopDrag);
+				this.parent.addEventListener(MouseEvent.MOUSE_MOVE, onBulletDrag);
+			}
+			
+			private function onBulletStopDrag(e:MouseEvent):void{
+				stopDrag();
+				this.parent.removeEventListener(MouseEvent.MOUSE_UP,onBulletStopDrag);
+				this.parent.removeEventListener(MouseEvent.MOUSE_MOVE, onBulletDrag);
+			}
+			
+			private function onBulletDrag(e:MouseEvent):void{
+				// На основе таскаемого буллета вычисляю координаты остальных буллетов
+				switch(currentDraggedBullet.name){
+					case "centerAlpha":
+						bullLT.x=centerAlpha.x;
+						bullLT.y=centerAlpha.y;
+						bullLB.x=centerAlpha.x;
+						bullLB.y=centerAlpha.y+rect.height;
+						bullRT.x=centerAlpha.x+rect.width;
+						bullRT.y=centerAlpha.y;
+						bullRB.x=centerAlpha.x+rect.width;
+						bullRB.y=centerAlpha.y+rect.height;
+						break;
+					case "lt":
+						bullLB.x=bullLT.x;
+						bullRT.y=bullLT.y;
+						break;
+					case "lb":
+						bullLT.x=bullLB.x;
+						bullRB.y=bullLB.y;
+						break;
+					case "rt":
+						bullRB.x=bullRT.x;
+						bullLT.y=bullRT.y;
+						break;
+					case "rb":
+						bullRT.x=bullRB.x;
+						bullLB.y=bullRB.y;
+						break;
+					default:
+						break;
+				}
+				
+				// На основе буллетов вычисляем Rect
+				rect.x=bullLT.x;
+				rect.y=bullLT.y;
+				rect.width=bullRB.x-bullLT.x;
+				rect.height=bullRB.y-bullLT.y;
+				
+				// Перерисовываю центральную пустышку
+				redrawCenterAlphaBullet();
+				
+				// Перерисовываем рамку
+				redrawRect();
+			}
+			
+		]]>
+	</fx:Script>
+</mx:UIComponent>

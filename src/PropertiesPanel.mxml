@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Panel xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		  xmlns:s="library://ns.adobe.com/flex/spark" 
+		  xmlns:mx="library://ns.adobe.com/flex/mx"
+		  layout="absolute"
+		  title="{resourceManager.getString('myResources', 'imageProperties')}"
+		  borderThicknessBottom="2"
+		  borderThicknessLeft="8"
+		  borderThicknessRight="8"
+		  borderThicknessTop="8"
+		  borderColor="#EAEAEA"
+		  borderAlpha="1"
+		  cornerRadius="3"
+		  roundedBottomCorners="true"
+		  horizontalScrollPolicy="off"
+		  verticalScrollPolicy="off"
+		  creationComplete="init()"
+		  resize="onPanelResize(event)">
+	<fx:Metadata>
+		[Event(name="properiesChanged", type="flash.events.Event")]
+		[Event(name="notUploadedProperiesChanged", type="flash.events.Event")]
+	</fx:Metadata>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.jmm.LabelEditor;
+			
+			import mx.core.FlexGlobals;
+			import mx.effects.AnimateProperty;
+			
+			private const monthArray1:Array=["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"];	
+			
+			[Bindable]
+			public var trueFalseDP:Array=[{label:"true", value:true},{label:"false", value:false}];
+			private var winColor:String = "#EAEAEA";
+			private var bkgrColor:String = "#AAAAAA";
+			private var fontColor:String = "#222222";
+
+			[Bindable]
+			public var isMinimized:Boolean=false;
+			
+			private var currPhoto:Object;
+
+			[Embed (source='assets/right.png')]
+			private var RightIcon:Class;
+			[Embed (source='assets/left.png')]
+			private var LeftIcon:Class;
+			
+			private var picturePreview:Loader=new Loader();
+			private var bitmap:Bitmap;
+			
+			private function init():void{
+				// Инициализирую контент всех вкладок Акордеона - листаю 1-->0
+				accordion.selectedIndex=0;
+				
+				if(!FlexGlobals.topLevelApplication.DEBUG_MODE)
+				{
+					bkgrColor=FlexGlobals.topLevelApplication.parameters.bkgrcolor;
+					winColor=FlexGlobals.topLevelApplication.parameters.wincolor;
+					fontColor=FlexGlobals.topLevelApplication.parameters.fontcolor;
+					
+					propCtrl.setStyle("borderColor", winColor);
+					propCtrl.setStyle("backgroundColor", winColor);
+					this.setStyle("borderColor", winColor);
+					
+					propCtrl.setStyle("color", fontColor);
+					this.setStyle("color", fontColor);
+				}
+			}
+			
+			private function changePropertiesState():void{
+				isMinimized=!isMinimized;
+				
+				var anim:AnimateProperty=new AnimateProperty(this);
+				anim.fromValue=this.width;
+				anim.property="width";
+				if(isMinimized){
+					anim.toValue=60;
+					btnPreviewPanelState.setStyle("icon",LeftIcon);
+				} else {
+					anim.toValue=300;
+					btnPreviewPanelState.setStyle("icon",RightIcon);
+				}
+				anim.play([this]);
+			}
+			
+			public function clear():void{
+				// Обновление Панели Details
+//				picturePreview.source="";
+				while(picContainer.numChildren) picContainer.removeChildAt(0);
+				pictureDetails.text="";
+				
+				// Обновление панели Таблица свойств - Редактирование
+				editorAutorTF.text="";
+				editorNameTF.text="";
+				editorDescriptionTF.text="";
+				editorPublished.selectedIndex = 0;
+				editorTagsTF.text="";
+			}
+			
+			public function set currentPhoto(value:Object):void {
+				if(!value) {
+					clear();
+					return;
+				}
+				
+				currPhoto=value;
+
+				var photoUrl:String=currPhoto.middle_url ? currPhoto.middle_url : currPhoto.big_url;
+				// Если у фотографии есть Id, то она уже загружена ранее
+				if(currPhoto.id){
+					picturePreview.load(new URLRequest(photoUrl));
+					picturePreview.contentLoaderInfo.addEventListener(Event.COMPLETE, onPicturePreviewLoaded); 
+				}else{
+					try{
+						// Загружаем картинку локально
+						FileReference(currPhoto.fileRef).load();
+						FileReference(currPhoto.fileRef).addEventListener ( Event.COMPLETE,function(e:Event):void{
+							picturePreview=new Loader();
+							picturePreview.contentLoaderInfo.addEventListener ( Event.COMPLETE, onPicturePreviewLoaded ) ;
+							picturePreview.loadBytes(currPhoto.fileRef.data);
+						});
+					}catch (e:Error){
+						// Одновременно нельзя грузить несколько картинок локально,
+						// если произошла ошибка, пробуем грузить через 1/5 секунды 
+						var myTimer:Timer = new Timer(200, 1);
+						myTimer.addEventListener("timer", function(e:TimerEvent):void{
+							currentPhoto=currPhoto;
+						});
+						myTimer.start();
+					}
+				}
+				
+				
+				// Обновление Панели Details
+				//pictureDetails.htmlText='This is <font color="#FF0000">HTML text</font> in a <b>TextArea control</b>. Use the <u>htmlText property</u> of the <font color="#008800">TextArea control</font> to include basic HTML markup in your text.';
+				pictureDetails.htmlText="<b>" + resourceManager.getString('myResources', 'pictureName')+" </b>\n";
+				pictureDetails.htmlText+=currPhoto.imgtitle+"\n";
+				
+				if(editorAuthorBox.enabled) pictureDetails.htmlText+="<b>" + resourceManager.getString('myResources', 'editorAuthor')+" </b>\n";
+				if(editorAuthorBox.enabled) pictureDetails.htmlText+=currPhoto.imgauthor+"\n";
+				if(currPhoto.imgtext!=""  && editorDescriptionBox.enabled) pictureDetails.htmlText+= "<b>" + resourceManager.getString('myResources', 'pictureDescription')+" </b>\n";
+				if(currPhoto.imgtext!=""  && editorDescriptionBox.enabled) pictureDetails.htmlText+=currPhoto.imgtext+"\n";
+				if(currPhoto.tags!="" && editorTagsBox.enabled) pictureDetails.htmlText+= "<b>" + resourceManager.getString('myResources', 'pictureTags')+" </b>\n";
+				if(currPhoto.tags!="" && editorTagsBox.enabled) pictureDetails.htmlText+=currPhoto.tags+"\n";
+				if(currPhoto.size)
+				{
+					pictureDetails.htmlText+="<b>" + resourceManager.getString('myResources', 'pictureSize')+"</b>\n";
+					pictureDetails.htmlText+=(currPhoto.size/1024).toFixed(2)+" Kb\n";
+				}
+				pictureDetails.htmlText+="<b>" + resourceManager.getString('myResources', 'pictureDate')+"</b>\n";
+				pictureDetails.htmlText+=getDateMyFormat(new Date(Number(currPhoto.lastmod)*1000))+" "+getTimeMyFormat(new Date(Number(currPhoto.lastmod)*1000))+"\n";
+				
+				// Обновление панели Таблица свойств - Редактирование
+				if(editorAuthorBox.enabled) editorAutorTF.text=currPhoto.imgauthor;
+				editorNameTF.text=currPhoto.imgtitle;
+				if(currPhoto.imgtext!="" && editorDescriptionBox.enabled){
+					editorDescriptionTF.text=currPhoto.imgtext;
+				} else {
+					editorDescriptionTF.text="";
+				}
+				editorPublished.selectedIndex = currPhoto.published.toString()=="1" ? 0: 1;
+				if(currPhoto.tags!="" && editorTagsBox.enabled) editorTagsTF.text=currPhoto.tags else editorTagsTF.text="";
+			}
+			public function get currentPhoto():Object {
+				return currPhoto;
+			}
+			
+			private function getTimeMyFormat(date:Date):String{
+				var minutes:String = String(date.minutes).length == 1 ? "0"+String(date.minutes) : String(date.minutes);
+				var seconds:String = String(date.seconds).length == 1 ? "0"+String(date.seconds) : String(date.seconds);
+				return date.hours.toString()+":"+minutes+":"+seconds;
+			}
+			
+			private function getDateMyFormat(date:Date):String{
+				return date.date+"."+monthArray1[date.month]+"."+date.fullYear;//+resourceManager.getString('myResources', 'yearAbbr');
+			}
+			
+			public function editorSaveTFValue(e:Event):void {
+				// Если картинка не выбрана
+				if (!currPhoto) return;
+				var property:String;
+				var value:String;
+				// Если текстовое поле
+				if (e.currentTarget is TextInput || e.currentTarget is LabelEditor) {
+					var tf:TextInput = TextInput(e.currentTarget);
+					switch(tf.name) {
+						case "editorAutorTF":
+							property="imgauthor";
+						break;
+						case "editorNameTF":
+							property="imgtitle";
+						break;
+						case "cellEditorNameTF":
+							property="imgtitle";
+							editorNameTF.text=tf.text;
+						break;
+						case "editorDescriptionTF":
+							property="imgtext";
+						break;
+						case "editorTagsTF":
+							property="tags";
+						break;
+						default:
+							trace('Не знаю такого поля для редактирования');
+						break;
+					}
+					value=tf.text;
+				} else if(e.currentTarget is spark.components.TextArea) {
+					var rte:spark.components.TextArea = spark.components.TextArea(e.currentTarget);
+					switch(rte.name) {
+						case "editorDescriptionTF":
+							property="imgtext";
+						break;
+						default:
+							trace('Не знаю такого поля для редактирования');
+						break;
+					}
+					value=rte.text;
+				} else {
+					// Если Combo Box - Свойсво Published
+					property="published";
+					value=(ComboBox(e.currentTarget).selectedIndex==0) ? "1" : "0";
+				}
+				
+				// Присваиваю в массиве текущему фото
+				currPhoto[property]=value;
+				
+				// Если у фотографии есть Id, то она уже загружена ранее
+				if(currPhoto.id){
+					// Отсылаю на сохранение этого свойства
+					ConnectionManager.setPhotoProperty(onSetPropertyCompleted,onSetPropertyError, currPhoto.id,property,value);
+					// Сообщаем об изменении данных
+					dispatchEvent(new Event("properiesChanged"));
+				} else {
+					// Сообщаем об изменении данных ещё не загруженой фотографии
+					dispatchEvent(new Event("notUploadedProperiesChanged"));
+				}
+			}
+			private function onSetPropertyError(e:Event):void
+			{
+				return;
+			}
+			private function onSetPropertyCompleted(e:Event):void
+			{
+				return;
+			}
+			
+			private function onPanelResize(e:Event):void{
+				if(currPhoto) currentPhoto=currPhoto;
+			}
+			
+			private function onPicturePreviewLoaded(event:Event):void {
+				if(!picContainer ||
+					!picturePreview.content ||
+					isNaN(picturePreview.content.width) ||
+					picCanvas.width==0 ||
+					picCanvas.height==0) return;
+				
+				if(!picturePreview.content.width)
+				{
+					var myTimer:Timer = new Timer(200, 1);
+					myTimer.addEventListener("timer", onPicturePreviewLoaded);
+					myTimer.start();
+					return;
+				}
+
+				while(picContainer.numChildren) picContainer.removeChildAt(0);
+					
+				var k:Number=Math.min(picCanvas.width/picturePreview.content.width,picCanvas.height/picturePreview.content.height);
+				var bitWidth:Number=picturePreview.content.width*k;
+				var bitHeight:Number=picturePreview.content.height*k;
+				
+				var bd:BitmapData=new BitmapData(bitWidth, bitHeight);
+				bd.draw(picturePreview, new Matrix(k,0,0,k));
+				bitmap=new Bitmap(bd,"auto",true);
+				bitmap.x=picCanvas.width/2-bitWidth/2;
+				bitmap.y=picCanvas.height/2-bitHeight/2;
+				picContainer.addChild(bitmap);
+			}
+			
+		]]>
+	</fx:Script>
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	<mx:Accordion width="100%" minWidth="200" top="0" bottom="26" selectedIndex="1" id="accordion"  fontSize="11" >
+		<mx:Canvas label="{resourceManager.getString('myResources', 'details')}" width="100%" height="100%" >
+			<mx:VBox id="picVBox" width="100%" height="100%" verticalGap="0">
+				<mx:Canvas id="picCanvas" width="100%" height="40%" >
+					<mx:UIComponent id="picContainer" >
+					</mx:UIComponent>
+				</mx:Canvas>
+				<mx:HRule width="100%"/>
+				<mx:TextArea id="pictureDetails" width="100%" borderStyle="none" height="60%" editable="false" selectable="false"/>
+			</mx:VBox>
+		</mx:Canvas>
+		<mx:Canvas label="{resourceManager.getString('myResources', 'propertiesTable')}" width="{this.width}" height="100%">
+			<mx:VBox x="8" y="8">
+				<mx:HBox id="editorAuthorBox" width="{this.width-28}" horizontalScrollPolicy="off" >
+					<mx:Label text="{resourceManager.getString('myResources', 'editorAuthor')}" width="100"/>
+					<mx:TextInput id="editorAutorTF" width="100%" enter="editorSaveTFValue(event)" focusOut="editorSaveTFValue(event)"/>
+				</mx:HBox>
+				<mx:HBox id="editorNameBox" width="{this.width-28}" horizontalScrollPolicy="off">
+					<mx:Label text="{resourceManager.getString('myResources', 'editorName')}" width="100"/>
+					<mx:TextInput id="editorNameTF" width="100%" enter="editorSaveTFValue(event)" focusOut="editorSaveTFValue(event)"/>
+				</mx:HBox>
+				<mx:HBox id="editorDescriptionBox" width="{this.width-28}" horizontalScrollPolicy="off">
+					<mx:Label text="{resourceManager.getString('myResources', 'editorDescription')}" width="100"/>
+					<s:TextArea id="editorDescriptionTF"
+								width="100%"
+								focusOut="editorSaveTFValue(event)"	/>
+				</mx:HBox>
+				<mx:HBox id="editorPublishedBox" width="{this.width-28}" horizontalScrollPolicy="off" >
+					<mx:Label text="{resourceManager.getString('myResources', 'editorPublished')}" width="100"/>
+					<mx:ComboBox id="editorPublished" dataProvider="{trueFalseDP}" width="100%" change="editorSaveTFValue(event)"/>
+				</mx:HBox>
+				<mx:HBox id="editorTagsBox" width="{this.width-28}" horizontalScrollPolicy="off">
+					<mx:Label text="{resourceManager.getString('myResources', 'editorTags')}" width="100"/>
+					<mx:TextInput id="editorTagsTF" width="100%" enter="editorSaveTFValue(event)" focusOut="editorSaveTFValue(event)"/>
+				</mx:HBox>
+			</mx:VBox>
+			
+		</mx:Canvas>
+	</mx:Accordion>
+	<mx:Canvas id="propCtrl" bottom="0" height="26" left="0" right="0" backgroundColor="#EAEAEA" borderStyle="solid" borderColor="#EAEAEA">
+		<mx:Button x="4" y="2" id="btnPreviewPanelState" toolTip="Show/Hide file(s)" icon="@Embed('assets/right.png')" width="26" click="changePropertiesState()"/>
+	</mx:Canvas>
+</mx:Panel>

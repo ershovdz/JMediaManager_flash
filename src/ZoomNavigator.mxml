@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Panel xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		  xmlns:s="library://ns.adobe.com/flex/spark" 
+		  xmlns:mx="library://ns.adobe.com/flex/mx"
+		  title="{resourceManager.getString('myResources', 'editorNavigator')}"
+		  borderColor="#EAEAEA"
+		  borderAlpha="1"
+		  cornerRadius="0"
+		  width="170"
+		  height="192"
+		  horizontalScrollPolicy="off"
+		  verticalScrollPolicy="off"
+		  creationComplete="onCreationComplete()"
+		  layout="absolute" borderThicknessBottom="6" borderThicknessLeft="6" borderThicknessRight="6" borderThicknessTop="0">
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	<fx:Metadata>
+		[ResourceBundle("myResources")]
+	</fx:Metadata>
+	<fx:Script>
+		<![CDATA[
+			import mx.events.FlexEvent;
+			import flash.display.Bitmap;
+			
+			import mx.controls.sliderClasses.Slider;
+			
+			private const zoomConst:Array=[10,17,25,33,50,67,100,150,200,300,400,500];
+
+			private var uiContainer:UIComponent;
+			private var bitmap:Bitmap;
+			private var navBitmap:Bitmap;
+			private var workAreaWidth:Number;
+			private var workAreaHeight:Number;
+			
+			public function onCreationComplete():void{
+			}
+			
+			public function init(_parent:UIComponent, _targetBitmap:Bitmap, _workAreaWidth:Number, _workAreaHeight:Number):void{
+				uiContainer=_parent;
+				bitmap=_targetBitmap;
+				workAreaWidth=_workAreaWidth;
+				workAreaHeight=_workAreaHeight;
+				
+				// Рисуем картинку в навигатор
+				drawNavigatorBitmap();
+				
+				// Применяем позицию и размер картинки на манипулятор навигатора
+				picToNav();
+
+				// Добавляем листнеры
+				configureListeners("add");
+			}
+			
+			private function configureListeners(action:String="add"):void {
+				uiContainer[action+"EventListener"](MouseEvent.MOUSE_DOWN, startImageDrag);
+				uiContainer[action+"EventListener"](MouseEvent.MOUSE_UP, stopImageDrag);
+				uiContainer[action+"EventListener"](MouseEvent.MOUSE_OUT, stopImageDrag);
+				uiContainer[action+"EventListener"](MouseEvent.CLICK, stopImageDrag); 
+				
+				navigatorRamka[action+"EventListener"](MouseEvent.MOUSE_DOWN, startNavRamkaDrag);
+				navigatorRamka[action+"EventListener"](MouseEvent.MOUSE_UP, stopNavRamkaDrag);
+				navigatorRamka[action+"EventListener"](MouseEvent.MOUSE_OUT, stopNavRamkaDrag);
+				navigatorRamka[action+"EventListener"](MouseEvent.CLICK, stopNavRamkaDrag); 
+			}
+			
+			public function set isEnabled(value:Boolean):void{
+				enabled=value;
+				// Добавляем или убираем листнеры
+				configureListeners(value ? "add" : "remove");
+			}
+			
+			// Начинаем тащить картинку
+			private function startImageDrag(e:MouseEvent):void {
+				var imageWidth:Number=bitmap.width*uiContainer.scaleX;
+				var imageHeight:Number=bitmap.height*uiContainer.scaleY;
+				
+				var rect:Rectangle = new Rectangle(
+					10 - (imageWidth - workAreaWidth), 
+					10 - (imageHeight -workAreaHeight),
+					imageWidth - workAreaWidth, 
+					imageHeight - workAreaHeight
+				);
+				uiContainer.startDrag(false, rect);
+				uiContainer.addEventListener(MouseEvent.MOUSE_MOVE,onImageDrag);
+			}
+			// Тащим картинку - перерисовываем рамку в навигаторе
+			private function onImageDrag(e:MouseEvent):void {
+				picToNav();
+			}
+			// Перестаём тащить картинку
+			private function stopImageDrag(e:MouseEvent):void {
+				uiContainer.removeEventListener(MouseEvent.MOUSE_MOVE,onImageDrag);
+				uiContainer.stopDrag();
+			}
+
+			// Начинаем тащить рамку в навигаторе
+			private function startNavRamkaDrag(e:MouseEvent):void {
+				var rect:Rectangle = new Rectangle(
+					navigatorContainer.x+navBitmap.x, 
+					navigatorContainer.y+navBitmap.y,
+					navBitmap.width-navigatorRamka.width,
+					navBitmap.height-navigatorRamka.height
+				);
+				// Заглушка против погрешности, недоезжает рамка до края картинки
+				if(navBitmap.width>navigatorRamka.width) rect.width++;
+				if(navBitmap.height>navigatorRamka.height) rect.height++;
+				
+				navigatorRamka.startDrag(false, rect);
+				navigatorRamka.addEventListener(MouseEvent.MOUSE_MOVE,onNavRamkaDrag);
+			}
+			// Тащим рамку в навигаторе - перерисовываем картинку
+			private function onNavRamkaDrag(e:MouseEvent):void {
+				navToPic();
+			}
+			// Перестаём тащить рамку в навигаторе
+			private function stopNavRamkaDrag(e:MouseEvent):void {
+				navigatorRamka.stopDrag();
+				navigatorRamka.removeEventListener(MouseEvent.MOUSE_MOVE,onNavRamkaDrag);
+			}
+			
+			// Рисуем картинку в навигатор
+			private function drawNavigatorBitmap():void{
+				while(navigatorContainer.numChildren) navigatorContainer.removeChildAt(0);
+				
+				var k:Number=1/Math.max(bitmap.width/navigatorContainer.width,
+					bitmap.height/navigatorContainer.height);
+				var bd:BitmapData=new BitmapData(	Math.round(bitmap.width*k),
+					Math.round(bitmap.height*k));
+				bd.draw(bitmap,
+					new Matrix(k,0,0,k),
+					null,null,null,true);
+				navBitmap=new Bitmap(bd,"auto",true);
+				navBitmap.x=Math.round(navigatorContainer.width/2-navBitmap.width/2);
+				navBitmap.y=Math.round(navigatorContainer.height/2-navBitmap.height/2);
+				navigatorContainer.addChild(navBitmap);
+			}
+			
+			// Применяем позицию и размер картинки на манипулятор навигатора
+			public function picToNav():void{
+				zoomSlider.value=Math.round(uiContainer.scaleX*100);
+				navSizeTF.text=zoomSlider.value.toString()+"%";
+
+				var imageWidth:Number=bitmap.width*uiContainer.scaleX;
+				var imageHeight:Number=bitmap.height*uiContainer.scaleY;
+				var percentWidthAtScreen:Number=Math.min(workAreaWidth/imageWidth,1);
+				var percentHeightAtScreen:Number=Math.min(workAreaHeight/imageHeight,1);
+				
+				navigatorRamka.width=navBitmap.width*percentWidthAtScreen;
+				navigatorRamka.height=navBitmap.height*percentHeightAtScreen;
+				
+				var scaleDifference:Number=navBitmap.width/imageWidth;
+				var xOffset:Number= - Math.min(0, uiContainer.x-10);
+				var yOffset:Number= - Math.min(0, uiContainer.y-10);
+				
+				navigatorRamka.x=navigatorContainer.x+navBitmap.x + xOffset*scaleDifference;
+				navigatorRamka.y=navigatorContainer.y+navBitmap.y + yOffset*scaleDifference;
+			}
+			
+			// Применяем позицию картинки на основе рамки навигатора
+			private function navToPic():void{
+				var imageWidth:Number=bitmap.width*uiContainer.scaleX;
+				var imageHeight:Number=bitmap.height*uiContainer.scaleY;
+				
+				var scaleDifference:Number=imageWidth/navBitmap.width;
+				var xRamkaOffset:Number = navigatorRamka.x-navBitmap.x-navigatorContainer.x;
+				var yRamkaOffset:Number = navigatorRamka.y-navBitmap.y-navigatorContainer.y;
+				
+				uiContainer.x=10-xRamkaOffset*scaleDifference;
+				uiContainer.y=10-yRamkaOffset*scaleDifference;
+				
+				removeRightButtomSpace();
+			}
+			
+			public function removeRightButtomSpace():void{
+				var imageWidth:Number=bitmap.width*uiContainer.scaleX;
+				var imageHeight:Number=bitmap.height*uiContainer.scaleY;
+				// Заглушка против погрешности, белая полоса справа и снизу при большом Zoom
+				if(uiContainer.x<10 - (imageWidth - workAreaWidth)&&imageWidth > workAreaWidth) 
+					uiContainer.x=10 - (imageWidth - workAreaWidth);
+				if(uiContainer.y<10 - (imageHeight - workAreaHeight)&&imageHeight > workAreaHeight)
+					uiContainer.y=10 - (imageHeight - workAreaHeight);
+				
+				picToNav();
+			} 
+			
+			// Переместили Zoom слайдер у навигатора
+			private function onNavZoomSlider(e:Event):void{
+				uiContainer.scaleX=zoomSlider.value/100;
+				uiContainer.scaleY=zoomSlider.value/100;
+				navSizeTF.text=zoomSlider.value.toString()+"%";
+				
+				// Проверяем чтобы картинка не оставалась за экраном при уменьшении
+				var imageWidth:Number=bitmap.width*uiContainer.scaleX;
+				var imageHeight:Number=bitmap.height*uiContainer.scaleY;
+				if(uiContainer.x<10 - (imageWidth - workAreaWidth))uiContainer.x=10 - (imageWidth - workAreaWidth);
+				if(uiContainer.y<10 - (imageHeight -workAreaHeight))uiContainer.y=10 - (imageHeight -workAreaHeight);
+				if(uiContainer.x>10) uiContainer.x=10;
+				if(uiContainer.y>10) uiContainer.y=10;
+				picToNav();
+			}
+			
+			// Увеличиваем Zoom плюсиком
+			private function zoomInButtonClick(e:Event):void{
+				for(var i:int=0; i<zoomConst.length; i++){
+					if(zoomConst[i]>zoomSlider.value) {
+						zoomSlider.value=zoomConst[i];
+						break;
+					}
+				}
+				onNavZoomSlider(null);
+			}
+			// Уменьшаем Zoom минусиком
+			private function zoomOutButtonClick(e:Event):void{
+				for(var i:int=zoomConst.length-1; i>=0; i--){
+					if(zoomConst[i]<zoomSlider.value) {
+						zoomSlider.value=zoomConst[i];
+						break;
+					}
+				}
+				onNavZoomSlider(null);
+			}
+			// Вбиваем Zoom вручную
+			private function navSizeInput(e:Event):void{
+				var size:String=navSizeTF.text;
+				if(size.indexOf("%")!=-1){
+					size=size.substring(0,size.indexOf("%"));
+				}
+				zoomSlider.value=int(size);
+				onNavZoomSlider(null);
+			}
+			
+
+		]]>
+	</fx:Script>
+	<mx:HSlider id="zoomSlider" x="59" y="135" width="75" minimum="10" maximum="500" snapInterval="1" liveDragging="true" value="100" change="onNavZoomSlider(event)"/>
+	<mx:UIComponent id="navigatorContainer" width="158" height="120"  x="0" y="0"/>
+	<mx:Canvas id="navigatorRamka" borderStyle="solid" borderThickness="2" borderColor="0xff0000" backgroundColor="0x111111" backgroundAlpha="0.0"  x="0" y="63" buttonMode="true"/>
+	<mx:Button x="132" y="136" label="+" width="16" paddingBottom="0" paddingLeft="0" paddingRight="0" paddingTop="0" height="16" fontSize="10" fontWeight="bold" fontFamily="Verdana" click="zoomInButtonClick(event)"/>
+	<mx:Button x="46" y="136" label="-" width="16" paddingBottom="0" paddingLeft="0" paddingRight="0" paddingTop="0" height="16" fontSize="10" fontWeight="bold" fontFamily="Verdana" click="zoomOutButtonClick(event)"/>
+	<mx:TextInput x="3" y="133" width="40" height="21" text="100%" fontSize="10" fontFamily="Arial" textAlign="center" id="navSizeTF" enter="navSizeInput(event)" maxChars="4" restrict="0123456789"/>
+</mx:Panel>

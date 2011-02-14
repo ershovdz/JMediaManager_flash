@@ -1,0 +1,491 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Panel xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx"
+		 width="100%"
+		 height="100%"
+		 minHeight="80"
+		 layout="absolute"
+		 title="{resourceManager.getString('myResources', 'pictureUploading')}"
+		 left="0"
+		 right="0"
+		 bottom="0"
+		 borderThicknessBottom="0"
+		 borderThicknessLeft="0"
+		 borderThicknessRight="0"
+		 borderThicknessTop="0"
+		 borderColor="#EAEAEA"
+		 borderAlpha="1"
+		 cornerRadius="0"
+		 roundedBottomCorners="true"
+		 creationComplete="init()">
+	
+	<fx:Metadata>
+		[Event(name="uploadComplete", type="flash.events.Event")]
+	</fx:Metadata>
+	
+	<fx:Script>
+		<![CDATA[
+			//import com.adobe.images.JPGEncoder;
+			
+			import hurlant.jpeg.as3_jpeg_wrapper;
+			
+			import mx.collections.ArrayCollection;
+			import mx.controls.Alert;
+			import mx.controls.Image;
+			import mx.controls.Tree;
+			import mx.core.FlexGlobals;
+			import mx.effects.AnimateProperty;
+			import mx.utils.Base64Encoder;
+
+			public var bytes:ByteArray;
+			public var propertiesList:Array;
+			private var progressBarStepSize:Number;
+			private var progressBarValue:Number;
+			
+			[Bindable]
+			private var filesForUploadDP:ArrayCollection=new ArrayCollection();
+			private var currentUploadIndex:int=0;
+			private var currentFileRef = new FileReference();
+			private var currentFileByteArray = new ByteArray();
+			private var litlePicSize:int=0;
+			private var smallPicSize:int=0;
+			[Bindable]
+			private var middlePicSize:int=448;
+			private var bigPicSize:int=0;
+			
+			private var winColor:String = "#EAEAEA";
+			private var bkgrColor:String = "#AAAAAA";
+			private var fontColor:String = "#222222";
+			
+			private var tree:Tree;
+			
+			// Исходная картинка используемая для аплоада
+			private var pic2Resize:Loader;
+			
+			// Индекс размера загружаемой картинки 60x60 --> 100x100 
+			private var uploadSizeIndex:int;
+			
+			private var isMinimized:Boolean=false;
+			
+			[Embed (source='assets/up.png')]
+			private var UpIcon:Class;
+			
+			[Embed (source='assets/down.png')]
+			private var DownIcon:Class;
+			
+			private var fileToOpen:FileReferenceList;
+
+			////////////////////////////////////////////////////////////
+			/////////////////////// ПАНЕЛЬ ЗАГРУЗКИ ФОТОГРАФИЙ
+			////////////////////////////////////////////////////////////
+			private function init():void{
+				tree=FlexGlobals.topLevelApplication.tree;
+				FlexGlobals.topLevelApplication.propertiesPanel.addEventListener("notUploadedProperiesChanged", onPropertiesChanged);
+				
+				
+				if(!FlexGlobals.topLevelApplication.DEBUG_MODE)
+				{
+					bkgrColor=FlexGlobals.topLevelApplication.parameters.bkgrcolor;
+					winColor=FlexGlobals.topLevelApplication.parameters.wincolor;
+					fontColor=FlexGlobals.topLevelApplication.parameters.fontcolor;
+					
+					uploadCtrl.setStyle("borderColor", winColor);
+					uploadCtrl.setStyle("backgroundColor", winColor);
+					this.setStyle("borderColor", winColor);
+					
+					uploadCtrl.setStyle("color", fontColor);
+					this.setStyle("color", fontColor);
+				}
+			}
+
+			private function onSelectPhoto(e:Event):void{
+				if(filesForUploadDataGrid.selectedItem){
+					FlexGlobals.topLevelApplication.propertiesPanel.currentPhoto=filesForUploadDataGrid.selectedItem;
+				}
+			}
+			
+			private function onPropertiesChanged(e:Event):void{
+				filesForUploadDataGrid.dataProvider=filesForUploadDP;
+			}
+			
+			private function changeState():void{
+				isMinimized=!isMinimized;
+				var anim:AnimateProperty=new AnimateProperty(this);
+				anim.fromValue=height;
+				anim.property="height";
+				if(isMinimized){
+					anim.toValue=80;
+					horizontalScrollPolicy="off";
+					verticalScrollPolicy="off";
+					btnUploadPanelState.setStyle("icon",UpIcon);
+				} else {
+					anim.toValue=300;
+					horizontalScrollPolicy="auto";
+					verticalScrollPolicy="auto";
+					btnUploadPanelState.setStyle("icon",DownIcon);
+				}
+				anim.play([this]);
+			}
+			
+			public function uploadPanelAddFiles(e:MouseEvent):void {
+				// Если в дереве не выбрана категория показываем ошибку
+				if(!tree.selectedItem || tree.selectedItem.type.toString()!="page") {
+					Alert.show(resourceManager.getString('myResources', 'selectCategoryError'));
+					return;
+				}
+				
+				if(isMinimized) changeState();
+				
+				fileToOpen = new FileReferenceList();
+				var fileTypeFilter:FileFilter = new FileFilter(resourceManager.getString('myResources', 'pictureFiles')+'(jpg, gif, png)', '*.Jpg; *.jpg; *.JPG; *.Jpeg; *.jpeg; *.JPEG; *.Gif; *.gif; *.GIF; *.Png; *.png; *.PNG');
+				try {
+					IEventDispatcher(fileToOpen).addEventListener(Event.SELECT, filesSelected);
+					fileToOpen.browse([fileTypeFilter]);
+				} catch (error:Error){trace("Failed:", error.message)}
+			}
+			
+			private function filesSelected(event:Event):void {
+				var files:Array=FileReferenceList(event.target).fileList;
+				for(var i:int=0; i<files.length; i++) {
+					var eachFile:FileReference = files[i];
+					var picSize:Number = Number(eachFile.size / 1024);
+					var picSizeStr:String = String(picSize.toFixed(1) + " KB");
+					if (picSize > 1000) {
+						picSize = picSize / 1024;
+						picSizeStr = String(picSize.toFixed(1) + " MB");
+					}
+					
+					filesForUploadDP.addItem({
+						photoId:"",
+						imgtitle:eachFile.name,
+						size:eachFile.size,
+						sizeStr:picSizeStr,
+						category:tree.selectedItem.caption.toString(),
+						status:resourceManager.getString('myResources', 'inQueue'),
+						uploaded:false,
+						isSmall:false,
+						fileRef:eachFile,
+						imgauthor:"",
+						imgtext: "",
+						tags: "",
+						catId: tree.selectedItem.id,
+						published: "1",
+						lastmod:new Date().time/1000
+					});
+				}
+				
+			}
+			
+			private function clearQueue()
+			{
+				//trace(System.totalMemory);
+				for(var i:int= 0; i < filesForUploadDP.length; i++)
+				{
+					filesForUploadDP.getItemAt(i).fileRef = null;
+					filesForUploadDP.setItemAt(null, i);
+				}
+				FlexGlobals.topLevelApplication.propertiesPanel.currentPhoto=null;
+				filesForUploadDP.removeAll();
+				filesForUploadDP = null;
+				
+				filesForUploadDP=new ArrayCollection();
+				
+				filesForUploadDataGrid.dataProvider=filesForUploadDP;
+				
+				progressBar.setProgress(0, 100); 
+				progressBar.label=resourceManager.getString('myResources', 'ready');
+				
+				//System.gc();
+				
+				//trace(System.totalMemory);
+			}
+			
+			private function uploadPanelUploadBtnClick(e:MouseEvent):void {
+				// Если в дереве не выбрана категория показываем ошибку
+				if(!tree.selectedItem || tree.selectedItem.type.toString()!="page") {
+					Alert.show(resourceManager.getString('myResources', 'selectCategoryError'));
+					return;
+				}
+				
+				if(filesForUploadDP.length==0) return;
+				
+				if(isMinimized) changeState();
+				
+				FlexGlobals.topLevelApplication.globalPreloader.visible=true;
+
+				var filesPreparedForUpload:int=0;
+				for (var i:int=0; i<filesForUploadDP.length; i++) {
+					if(!filesForUploadDP[i].uploaded) filesPreparedForUpload++;		
+				}
+				progressBarValue=0;
+				progressBarStepSize=100/filesPreparedForUpload;
+				progressBar.setProgress(0, 100);
+				progressBar.label=resourceManager.getString('myResources', 'loading');
+				
+				currentUploadIndex=0;
+				continueUploading();
+			}
+			
+			private function continueUploading():void 
+			{
+				if(currentUploadIndex>=filesForUploadDP.length) {
+					FlexGlobals.topLevelApplication.globalPreloader.visible=false;
+					progressBar.setProgress(100, 100);
+					progressBar.label=resourceManager.getString('myResources', 'ready');
+					
+				
+
+					for (var i:int=0; i<filesForUploadDP.length; i++) {
+						if(filesForUploadDP[i].isSmall){
+							Alert.show(resourceManager.getString('myResources', 'smallPicturesSizeError')+" "+String(propertiesList[0].minSize)+" px");
+							return;
+						}
+					}
+				
+					FlexGlobals.topLevelApplication.globalPreloader.visible=false;
+					dispatchEvent(new Event("uploadComplete"));
+					return;
+				}
+				if(filesForUploadDP[currentUploadIndex].uploaded) { 
+					currentUploadIndex++; 
+					continueUploading(); 
+					return; 
+				}
+				
+				filesForUploadDP[currentUploadIndex].status=resourceManager.getString('myResources', 'uploading');
+				filesForUploadDataGrid.dataProvider=filesForUploadDP;
+				filesForUploadDataGrid.selectedIndex=currentUploadIndex;
+				filesForUploadDataGrid.scrollToIndex(currentUploadIndex);
+				
+				// Загружаем картинку
+				currentFileRef = filesForUploadDP[currentUploadIndex].fileRef;
+				currentFileRef.cancel();
+				currentFileRef.load();
+				currentFileRef.addEventListener ( Event.COMPLETE,onFileRefLoaded);
+			}
+			private function onFileRefLoaded(e:Event):void
+			{
+				currentFileRef.removeEventListener ( Event.COMPLETE,onFileRefLoaded);
+				
+				currentFileByteArray = currentFileRef.data;
+				pic2Resize=new Loader();
+				pic2Resize.contentLoaderInfo.addEventListener ( Event.COMPLETE, onPic2ResizeLoaded ) ;
+				pic2Resize.loadBytes(currentFileRef.data);
+				
+				
+			}
+			private function onPic2ResizeLoaded(event:Event):void 
+			{
+				// Бракуем маленькую картинку
+				if(pic2Resize.content.width<Number(propertiesList[0].minSize) && pic2Resize.content.height<Number(propertiesList[0].minSize)){
+					filesForUploadDP[currentUploadIndex].isSmall=true;
+					filesForUploadDP[currentUploadIndex].status=resourceManager.getString('myResources', 'tooSmallSize');
+					filesForUploadDataGrid.dataProvider=filesForUploadDP;
+
+					progressBarValue+=progressBarStepSize*propertiesList[0].sizes.length;
+					progressBar.setProgress(progressBarValue, 100);
+					progressBar.label=Math.round(progressBarValue).toString()+" %";
+
+					currentUploadIndex++;
+					continueUploading();
+					return;
+				}
+				prepareAllSizes();
+			}
+			
+			private function prepareAllSizes():void 
+			{
+				var encodedPics:Array=[];
+				// Кодируем в Base64
+				var encoder:Base64Encoder=new Base64Encoder();
+				
+				for (uploadSizeIndex=0; uploadSizeIndex<propertiesList[0].sizes.length; uploadSizeIndex++)
+				{
+					var k:Number;
+					var matrix:Matrix;
+					var resultImageBitmapData:BitmapData;
+					var resultImageBitmapData_orig:BitmapData;
+					//var jpgEncoder:JPGEncoder = new JPGEncoder(100);
+					
+					// Если картинка ранее была отредактирована
+					if(filesForUploadDP[currentUploadIndex].bitmapData)
+					{
+						// Вычисляем коээфициент сжатия исходной картинки
+						k=Math.min(	Number(propertiesList[0].sizes[uploadSizeIndex].w)/filesForUploadDP[currentUploadIndex].bitmapData.width,
+									Number(propertiesList[0].sizes[uploadSizeIndex].h)/filesForUploadDP[currentUploadIndex].bitmapData.height);
+						
+						if (k>1 
+							|| (FlexGlobals.topLevelApplication.saveOriginals 
+								&& uploadSizeIndex == propertiesList[0].sizes.length - 1)) k=1;
+						
+						resultImageBitmapData = as3_jpeg_wrapper.resizeImage(filesForUploadDP[currentUploadIndex].bitmapData, pic2Resize.content.width*k, pic2Resize.content.height*k); 
+						
+						// Конвертируюем в Jpeg, BitmapData
+						var tmpByteArray:ByteArray = resultImageBitmapData.getPixels(new Rectangle(0, 0, resultImageBitmapData.width, resultImageBitmapData.height));
+						var myByteArray:ByteArray = as3_jpeg_wrapper.write_jpeg_file(tmpByteArray, resultImageBitmapData.width, resultImageBitmapData.height, 3, 2);					
+						
+						encoder.encodeBytes(myByteArray);
+					
+					} 
+					else 
+					{ 
+						//if(!FlexGlobals.topLevelApplication.saveOriginals || uploadSizeIndex != propertiesList[0].sizes.length - 1)
+						//{
+							// Если картинка не была редактирована в редакторе
+							// Вычисляем коээфициент сжатия исходной картинки
+							k=Math.min(	Number(propertiesList[0].sizes[uploadSizeIndex].w)/pic2Resize.content.width,
+										Number(propertiesList[0].sizes[uploadSizeIndex].h)/pic2Resize.content.height);
+							
+							if (k>1 
+								|| (FlexGlobals.topLevelApplication.saveOriginals 
+								&& uploadSizeIndex == propertiesList[0].sizes.length - 1)) k=1;
+							
+							
+							
+							if(k != 1)
+							{
+								resultImageBitmapData=new BitmapData(pic2Resize.content.width,pic2Resize.content.height);
+								
+								resultImageBitmapData.draw(pic2Resize.content, new Matrix(1,0,0,1), null, null, null, true);
+								
+								resultImageBitmapData = as3_jpeg_wrapper.resizeImage(resultImageBitmapData, pic2Resize.content.width*k, pic2Resize.content.height*k); 	
+							
+								// Конвертируюем в Jpeg, BitmapData
+								var tmpByteArray:ByteArray = resultImageBitmapData.getPixels(new Rectangle(0, 0, resultImageBitmapData.width, resultImageBitmapData.height));
+								var myByteArray:ByteArray = as3_jpeg_wrapper.write_jpeg_file(tmpByteArray, resultImageBitmapData.width, resultImageBitmapData.height, 3, 2);					
+								//var myByteArray:ByteArray = jpgEncoder.encode(resultImageBitmapData);
+								
+								encoder.encodeBytes(myByteArray);
+							
+							}
+							else
+							{
+								encoder.encodeBytes(currentFileByteArray);
+							}
+							
+						//}
+					}
+
+					
+					
+					
+					encodedPics.push({
+						picName:"w"+propertiesList[0].sizes[uploadSizeIndex].w+"h"+propertiesList[0].sizes[uploadSizeIndex].h,
+						picData:encoder.toString()
+					});
+				}
+				
+				ConnectionManager.uploadBase64Photo(onImageSended,
+					onImageSended,
+					filesForUploadDP[currentUploadIndex].catId,
+					filesForUploadDP[currentUploadIndex].imgtitle,
+					filesForUploadDP[currentUploadIndex].imgtext,
+					filesForUploadDP[currentUploadIndex].imgauthor,
+					filesForUploadDP[currentUploadIndex].tags,
+					filesForUploadDP[currentUploadIndex].published,
+					encodedPics
+				);
+			}
+			
+			private function onImageSended(event:Event):void 
+			{
+				progressBarValue+=progressBarStepSize;
+				progressBar.setProgress(progressBarValue, 100);
+				progressBar.label=Math.round(progressBarValue).toString()+" %";
+				
+				// Сохраняю Id фотографии
+				try {
+					var answerXML:XML = new XML(event.currentTarget.data);
+					
+					if( !answerXML.hasOwnProperty("photoid") ) 
+					{
+						filesForUploadDP[currentUploadIndex].uploaded=false;
+						filesForUploadDP[currentUploadIndex].photoId="";
+						filesForUploadDP[currentUploadIndex].status=resourceManager.getString('myResources', 'error');
+						filesForUploadDataGrid.dataProvider=filesForUploadDP;
+						
+						FlexGlobals.topLevelApplication.globalPreloader.visible=false;
+						
+						progressBar.setProgress(0, 100);
+						progressBar.label=resourceManager.getString('myResources', 'error');
+						
+						if(answerXML.hasOwnProperty("error")) 
+						{
+							var errorCode:String = answerXML.error.toString();
+							FlexGlobals.topLevelApplication.errorHandler(errorCode);
+							return;
+						}
+						else
+						{
+							Alert.show(resourceManager.getString('myResources', 'uploadError'));
+							return;
+						}
+					}
+					
+				} catch (error:Error) {
+					// При ошибке - удаляем фотографию, если Id был получен ранее
+					if(filesForUploadDP[currentUploadIndex].photoId!=""){
+						ConnectionManager.deletePhotos(function(e:Event):void {},function(e:Error):void {}, filesForUploadDP[currentUploadIndex].photoId);
+					}
+					FlexGlobals.topLevelApplication.globalPreloader.visible=false;
+										
+					filesForUploadDP[currentUploadIndex].uploaded=false;
+					filesForUploadDP[currentUploadIndex].status=resourceManager.getString('myResources', 'error');
+					filesForUploadDataGrid.dataProvider=filesForUploadDP;
+					
+					progressBar.setProgress(0, 100);
+					progressBar.label=resourceManager.getString('myResources', 'error');
+					
+					Alert.show(resourceManager.getString('myResources', 'uploadError'));
+					return;
+				}
+				
+				filesForUploadDP[currentUploadIndex].uploaded=true;
+				filesForUploadDP[currentUploadIndex].photoId=answerXML.photoid.toString();
+				filesForUploadDP[currentUploadIndex].status=resourceManager.getString('myResources', 'uploaded');
+				filesForUploadDataGrid.dataProvider=filesForUploadDP;
+				
+				// Следующая картинка
+				currentUploadIndex++;
+				continueUploading();
+			} 
+			
+		]]>
+	</fx:Script>
+	
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	<mx:Canvas id="uploadCtrl" y="0" height="52" left="0" right="0" backgroundColor="#EAEAEA" borderStyle="solid" borderColor="#EAEAEA" horizontalScrollPolicy="off">
+		<mx:HBox x="6" y="2" horizontalGap="4" horizontalScrollPolicy="off" >
+			<mx:Button label="{resourceManager.getString('myResources', 'addFiles')}" icon="@Embed(source='assets/addIcon.png')" paddingLeft="3" paddingRight="3" width="160" height="20" click="uploadPanelAddFiles(event)" />
+			<mx:Button label="{resourceManager.getString('myResources', 'uploadFiles')}" icon="@Embed(source='assets/uploadIcon.png')" paddingLeft="3" paddingRight="3" height="20" click="{uploadPanelUploadBtnClick(event);}" />
+			<mx:Button id="btnUploadPanelState" toolTip="Show/Hide file(s)" icon="@Embed('assets/down.png')" width="26" click="changeState()"/>
+		</mx:HBox>
+		<mx:HBox x="6" y="28" horizontalGap="4" horizontalScrollPolicy="off" >
+			<mx:Button label="{resourceManager.getString('myResources', 'clearQueue')}" width="160" icon="@Embed(source='assets/deleteIcon.png')" paddingLeft="3" paddingRight="3" height="20" click="clearQueue()" />
+		</mx:HBox>
+	</mx:Canvas>
+	<mx:DataGrid
+		doubleClickEnabled="true"
+		doubleClick="{FlexGlobals.topLevelApplication.openEditor(filesForUploadDataGrid.selectedItem)}"
+		id="filesForUploadDataGrid"
+		left="0" right="0" top="54" bottom="23"
+		dataProvider="{filesForUploadDP}"
+		variableRowHeight="true"
+		click="onSelectPhoto(event)"
+		change="onSelectPhoto(event)"
+		rowHeight="32">
+		<mx:columns>
+			<mx:DataGridColumn headerText="{resourceManager.getString('myResources', 'photoPic')}" itemRenderer="uploadPanelBitmapItemRenderer"/>
+			<mx:DataGridColumn headerText="{resourceManager.getString('myResources', 'fileName')}" dataField="imgtitle" />
+			<mx:DataGridColumn headerText="{resourceManager.getString('myResources', 'size')}" dataField="sizeStr"/>
+			<mx:DataGridColumn headerText="{resourceManager.getString('myResources', 'category')}" dataField="category"/>
+			<mx:DataGridColumn headerText="{resourceManager.getString('myResources', 'status')}" dataField="status"/>
+		</mx:columns>
+	</mx:DataGrid>
+	
+	<mx:ProgressBar left="0" right="0" bottom="0" labelPlacement="center" height="19" minimum="0" maximum="100" id="progressBar" mode="manual" label=""/>
+</mx:Panel>

@@ -1,0 +1,381 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Panel	
+	xmlns:fx="http://ns.adobe.com/mxml/2009" 
+	xmlns:mx="library://ns.adobe.com/flex/mx"
+	xmlns:doc="com.daveoncode.ui.*"
+	xmlns:s="library://ns.adobe.com/flex/spark"
+	width="100%"
+	height="100%"
+	borderColor="#EAEAEA"
+	borderAlpha="1"
+	cornerRadius="0"
+	creationComplete="init()"
+	layout="absolute"
+	title="{resourceManager.getString('myResources', 'editorEditPhoto')}"
+	xmlns:local="*">
+	<fx:Metadata>
+		[Event(name="photoChanged", type="flash.events.Event")]
+		[ResourceBundle("myResources")]
+	</fx:Metadata>
+	<fx:Script>
+		<![CDATA[
+			import com.adobe.images.JPGEncoder;
+			import mx.core.FlexGlobals;
+			
+			import mx.controls.Alert;
+			import mx.utils.Base64Encoder;
+			
+			private var target:Object;
+			private var image:Loader=new Loader();
+			private var bitmap:Bitmap;
+			private var rectData:Rectangle;
+			
+			private var winColor:String = "#EAEAEA";
+			private var bkgrColor:String = "#AAAAAA";
+			private var fontColor:String = "#222222";
+			
+			[Bindable]
+			public var propertiesList:Array;
+			
+			
+			private function onResize(e:Event):void{
+				try{
+					if(enableCropChkBox.selected){
+						// Вписываю новую картинку в экран
+						fitToPage();
+						
+						// Перерисовываю Selector
+						selector.redraw(rectData);
+						
+						// Инициализируем Zoom Navigator
+						zoomNavigator.init(uiContainer, bitmap, ramka.width, ramka.height);
+						zoomNavigator.isEnabled=false;
+					} else {
+						// Инициализируем Zoom Navigator
+						zoomNavigator.init(uiContainer, bitmap, ramka.width, ramka.height);
+						zoomNavigator.isEnabled=true;
+						
+						zoomNavigator.removeRightButtomSpace();
+					}
+				} catch(e:Error){}
+			}
+			
+			private function init():void{
+				// Target к этому времени уже задан
+				
+				if(!FlexGlobals.topLevelApplication.DEBUG_MODE)
+				{
+					bkgrColor=FlexGlobals.topLevelApplication.parameters.bkgrcolor;
+					winColor=FlexGlobals.topLevelApplication.parameters.wincolor;
+					fontColor=FlexGlobals.topLevelApplication.parameters.fontcolor;
+					
+					editorPanel.setStyle("borderColor", winColor);
+					ramka.setStyle("borderColor", winColor);
+					
+					bitmapMask.setStyle("borderColor", winColor);
+					bitmapMask.setStyle("backgroundColor", winColor);
+					this.setStyle("borderColor", winColor);
+					
+					zoomNavigator.setStyle("borderColor", winColor);
+					zoomNavigator.setStyle("backgroundColor", winColor);
+					
+					editorPanel.setStyle("color", fontColor);
+					ramka.setStyle("color", fontColor);
+					bitmapMask.setStyle("color", fontColor);
+					this.setStyle("color", fontColor);
+					zoomNavigator.setStyle("color", fontColor);
+				}
+			}
+
+			public function set photo(value:Object):void{
+				target=value;
+				
+				// Если у фотографии есть Id, то она уже загружена ранее
+				if(target.id){
+					image.load(new URLRequest(target.big_url));
+					image.contentLoaderInfo.addEventListener(Event.COMPLETE, onImageLoaded); 
+					image.contentLoaderInfo.addEventListener(IOErrorEvent.IO_ERROR, onImageIOError);
+				}else{
+					// Загружаем картинку локально
+					FileReference(target.fileRef).load();
+					FileReference(target.fileRef).addEventListener ( Event.COMPLETE,function(e:Event):void{
+						image=new Loader();
+						image.contentLoaderInfo.addEventListener ( Event.COMPLETE, onImageLoaded ) ;
+						image.contentLoaderInfo.addEventListener ( IOErrorEvent.IO_ERROR, onImageIOError ) ;
+						image.loadBytes(target.fileRef.data);
+					});
+				}
+				
+				if(preloader) preloader.visible=true;
+				if(preloaderLabel) preloaderLabel.text=resourceManager.getString('myResources', 'loading');
+			}
+			private function onImageIOError(e:Event):void{
+				preloader.visible=false;
+				Alert.show(resourceManager.getString('myResources', 'editorErrorLoading'));
+				onExitClick(null);
+			}
+			
+			private function onImageLoaded(e:Event):void{
+				preloader.visible=false;
+				// Сохраняем картинку в Bitmap на основе исходной картинки
+				resetToDefault();
+				
+				// Инициализируем Zoom Navigator
+				zoomNavigator.init(uiContainer, bitmap, ramka.width, ramka.height);
+			}
+			
+			// Сохраняем картинку в Bitmap на основе исходной картинки
+			private function resetToDefault():void{
+				while(uiContainer.numChildren) uiContainer.removeChildAt(0);
+				
+				uiContainer.scaleX=1;
+				uiContainer.scaleY=1;
+				
+				var bd:BitmapData=new BitmapData(image.content.width, image.content.height);
+				bd.draw(image.content);
+				bitmap=new Bitmap(bd,"auto",true);
+				uiContainer.addChild(bitmap);
+			}
+			
+			// Переключение режима редактирования \ просмотра
+			private function onSwitchCropMode(e:Event):void{
+				var sel:Boolean=enableCropChkBox.selected;
+				zoomNavigator.isEnabled=!sel;
+				showFrameChkBox.enabled=sel;
+				turnLeftBtn.enabled=sel;
+				turnRightBtn.enabled=sel;
+				flipHorBtn.enabled=sel;
+				flipVertBtn.enabled=sel;
+				cropButton.enabled=sel && showFrameChkBox.selected;
+				selector.visible=sel && showFrameChkBox.selected;
+				
+				if(sel){
+					fitToPage();
+					selector.redraw(rectData);
+				} 				
+				zoomNavigator.picToNav();
+			}
+			
+			// Показываем\скрываем рамку обрезки
+			private function onShowFrameCheckBoxClick(event:Event):void{
+				cropButton.enabled=showFrameChkBox.selected;
+				selector.visible=showFrameChkBox.selected;
+			}
+			
+			// Обрезаем по рамке
+			private function onCropBtnClick(e:MouseEvent):void{
+				// Генерирую новую обрезанную картинку
+				var croppedBD:BitmapData=new BitmapData(rectData.width/uiContainer.scaleX, rectData.height/uiContainer.scaleY);
+				croppedBD.draw(bitmap,new Matrix(1,0,0,1,-rectData.x/uiContainer.scaleX, -rectData.y/uiContainer.scaleX));
+				
+				applyTransformation(croppedBD);
+			}
+			
+			// Поворачиваем налево
+			private function onTurnLeftBtnClick(e:MouseEvent):void{
+				// Генерирую повёрнутую картинку
+				var rotatedBD:BitmapData=new BitmapData(bitmap.height, bitmap.width);
+				var matrix:Matrix=new Matrix();
+				matrix.rotate(-Math.PI/2);
+				matrix.translate(0,bitmap.width);
+				rotatedBD.draw(bitmap,matrix);
+
+				applyTransformation(rotatedBD);
+			}
+
+			// Поворачиваем направо
+			private function onTurnRightBtnClick(e:MouseEvent):void{
+				// Генерирую повёрнутую картинку
+				var rotatedBD:BitmapData=new BitmapData(bitmap.height, bitmap.width);
+				var matrix:Matrix=new Matrix();
+				matrix.rotate(Math.PI/2);
+				matrix.translate(bitmap.height,0);
+				rotatedBD.draw(bitmap,matrix);
+				
+				applyTransformation(rotatedBD);
+			}
+			
+			// Отражаем горизонтально
+			private function onFlipHorizBtnClick(e:MouseEvent):void{
+				// Генерирую отраженную картинку
+				var flippedBD:BitmapData=new BitmapData(bitmap.width, bitmap.height);
+				var matrix:Matrix=new Matrix(-1);
+				matrix.translate(bitmap.width,0);
+				flippedBD.draw(bitmap,matrix);
+				
+				applyTransformation(flippedBD);
+			}
+
+			// Отражаем вертикально
+			private function onFlipVertBtnClick(e:MouseEvent):void{
+				// Генерирую отраженную картинку
+				var flippedBD:BitmapData=new BitmapData(bitmap.width, bitmap.height);
+				var matrix:Matrix=new Matrix(1,0,0,-1);
+				matrix.translate(0,bitmap.height);
+				flippedBD.draw(bitmap,matrix);
+				
+				applyTransformation(flippedBD);
+			}
+
+			// Применяем новую BitmapData к основному Bitmap
+			private function applyTransformation(_newBitmapData:BitmapData):void{
+				// Рисую картинку на сцену
+				while(uiContainer.numChildren) uiContainer.removeChildAt(0);
+				bitmap=new Bitmap(_newBitmapData,"auto",true);
+				uiContainer.addChild(bitmap);
+				
+				// Вписываю новую картинку в экран
+				fitToPage();
+				
+				// Перерисовываю Selector
+				selector.redraw(rectData);
+				
+				// Инициализируем Zoom Navigator
+				zoomNavigator.init(uiContainer, bitmap, ramka.width, ramka.height);
+				zoomNavigator.isEnabled=false;
+			}
+
+			
+			// Вписываем картинку в рабочую область
+			private function fitToPage():void{
+				var k:Number=1/Math.max(bitmap.width/ramka.width,bitmap.height/ramka.height);
+				if (k>1) k=1;
+				uiContainer.scaleX=k;
+				uiContainer.scaleY=k;
+				uiContainer.x=10;
+				uiContainer.y=10;
+				
+				// Сбрасываю рамку Selector на всю раб область
+				rectData=new Rectangle(0,0,bitmap.width*uiContainer.scaleX, bitmap.height*uiContainer.scaleY);
+			}
+			
+			
+			private function onResetClick(event:MouseEvent):void {
+				// Перехожу в режим просмотра
+				enableCropChkBox.selected=false;
+				onSwitchCropMode(null);
+				
+				// Гружу исходную картинку
+				target.bitmapData=null;
+				photo=target; 
+			}
+			
+			private function onExitClick(event:MouseEvent):void {
+				parent.removeChild(this);
+			}
+			
+			private function onSaveByTimerClick():void{
+				preloader.visible=true;
+				preloaderLabel.text=resourceManager.getString('myResources', 'saving');
+				
+				// Таймер нужен для того чтобы сначала отобразить прелоадер,
+				// а в следующем кадре начинать просчёт картинки
+				var myTimer:Timer = new Timer(100, 1);
+				myTimer.addEventListener("timer", onSaveClick);
+				myTimer.start();
+			}
+			private function onSaveClick(event:TimerEvent):void{
+				// Если у фотографии есть Id, то она уже загружена ранее
+				if(target.id){
+					var encodedPics:Array=[];
+					
+					for (var uploadSizeIndex:int=0; uploadSizeIndex<propertiesList[0].sizes.length; uploadSizeIndex++){
+						var k:Number;
+						var matrix:Matrix;
+						var resultImageBitmapData:BitmapData;
+						var jpgEncoder:JPGEncoder = new JPGEncoder(95);
+						
+						// Вычисляем коээфициент сжатия исходной картинки
+						k=Math.min(	Number(propertiesList[0].sizes[uploadSizeIndex].w)/bitmap.bitmapData.width,
+							Number(propertiesList[0].sizes[uploadSizeIndex].h)/bitmap.bitmapData.height);
+						if (k>1) k=1;
+						
+						matrix=new Matrix(k,0,0,k);
+						resultImageBitmapData=new BitmapData(bitmap.bitmapData.width*k,bitmap.bitmapData.height*k);
+						resultImageBitmapData.draw(bitmap.bitmapData, matrix);
+						
+						// Конвертируюем в Jpeg, BitmapData
+						var myByteArray:ByteArray = jpgEncoder.encode(resultImageBitmapData);
+						
+						// Кодируем в Base64
+						var encoder:Base64Encoder=new Base64Encoder();
+						encoder.encodeBytes(myByteArray);
+						
+						encodedPics.push({
+							picName:"w"+propertiesList[0].sizes[uploadSizeIndex].w+"h"+propertiesList[0].sizes[uploadSizeIndex].h,
+							picData:encoder.toString()
+						});
+					}
+					ConnectionManager.reUploadBase64Photo(onImageSended,
+						onImageSended,
+						target.catid,
+						target.id,
+						encodedPics
+					);
+					
+				} else {
+					target.bitmapData=bitmap.bitmapData;
+					preloader.visible=false;
+					Alert.show(resourceManager.getString('myResources', 'ready'));
+				}
+			}
+			
+			private function onImageSended(event:Event):void {
+				preloader.visible=false;
+				
+				// Снимаем кэширование с иконки в TileList
+				TileListItemRenderer.cashedImages[target.small_url]=null;
+				
+				dispatchEvent(new Event("itemChanged"));
+				
+				FlexGlobals.topLevelApplication.UpdateTileList();
+				
+				try {
+					// Если в ответе валидный XML сообщаем об успешном сохранении
+					var answerXML:XML = new XML(event.currentTarget.data);
+					
+					if( !answerXML.hasOwnProperty("photoid") ) 
+					{
+						Alert.show(resourceManager.getString('myResources', 'uploadError'));
+						return;
+					}
+					
+					Alert.show(resourceManager.getString('myResources', 'ready'));
+				} catch (error:Error) {
+					Alert.show(resourceManager.getString('myResources', 'uploadError'));
+					return;
+				}
+			}
+
+		]]>
+	</fx:Script>
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	<mx:Canvas id="bitmapMask" left="10" top="10" bottom="10" right="188" verticalScrollPolicy="off" horizontalScrollPolicy="off" borderStyle="solid" borderColor="#A6A6A6"  backgroundColor="#D1D1D1" backgroundAlpha="0.0"/>
+	<mx:UIComponent id="uiContainer" mask="{bitmapMask}" x="10" y="10" />
+	<mx:Canvas id="ramka" left="10" top="10" bottom="10" right="188" borderStyle="solid" borderColor="#A6A6A6" resize="onResize(event)"/>
+	<local:EditorSelector id="selector" x="10" y="10" maxWidth="{bitmap.width*uiContainer.scaleX}" maxHeight="{bitmap.height*uiContainer.scaleY}" propertiesList="{propertiesList}" />
+	
+	<local:ZoomNavigator id="zoomNavigator" right="10" top="10" borderColor="#EAEAEA" backgroundColor="#EAEAEA"/>
+	<mx:Panel id="editorPanel" title="{resourceManager.getString('myResources', 'editorCropAndRotate')}" borderColor="#EAEAEA" borderAlpha="1" cornerRadius="0" width="170" height="210" horizontalScrollPolicy="off" verticalScrollPolicy="off" layout="absolute" right="10" top="210" borderThicknessBottom="6" borderThicknessLeft="6" borderThicknessRight="6" borderThicknessTop="0">
+		<mx:CheckBox x="4" y="2" label="{resourceManager.getString('myResources', 'editorEnable')}" width="130" id="enableCropChkBox" change="onSwitchCropMode(event)"/>
+		<mx:CheckBox x="4" y="22" label="{resourceManager.getString('myResources', 'editorShowFrame')}" width="130" selected="true" id="showFrameChkBox" enabled="false" change="onShowFrameCheckBoxClick(event)"/>
+		<mx:Button y="44" label="{resourceManager.getString('myResources', 'editorCropByFrame')}" left="4" paddingLeft="0" paddingRight="0" right="4" id="cropButton" enabled="false" click="onCropBtnClick(event)" />
+		<mx:Button y="70" label="{resourceManager.getString('myResources', 'editorTurnLeft')}" left="4" paddingLeft="0" paddingRight="0" right="4" id="turnLeftBtn" enabled="false" click="onTurnLeftBtnClick(event)" />
+		<mx:Button y="96" label="{resourceManager.getString('myResources', 'editorTurnRight')}" left="4" paddingLeft="0" paddingRight="0" right="4" id="turnRightBtn" enabled="false" click="onTurnRightBtnClick(event)"/>
+		<mx:Button y="122" label="{resourceManager.getString('myResources', 'editorFlipHorizontal')}" left="4" paddingLeft="0" paddingRight="0" right="4" id="flipHorBtn" enabled="false" click="onFlipHorizBtnClick(event)"/>
+		<mx:Button y="148" label="{resourceManager.getString('myResources', 'editorFlipVertical')}" left="4" paddingLeft="0" paddingRight="0" right="4" id="flipVertBtn" enabled="false" click="onFlipVertBtnClick(event)"/>
+	</mx:Panel>
+	<mx:Button label="{resourceManager.getString('myResources', 'editorExit')}" click="onExitClick(event)" right="9" bottom="10" width="170"/>
+	<mx:Button label="{resourceManager.getString('myResources', 'editorSave')}" click="{ onSaveByTimerClick(); }" right="9" bottom="37" width="170"/>
+	<mx:Button label="{resourceManager.getString('myResources', 'editorReset')}" click="onResetClick(event)" right="9" bottom="64" width="170"/>
+	<s:BorderContainer id="preloader" left="0" top="0" bottom="0" right="0" visible="true">
+		<s:backgroundFill> 
+			<s:SolidColor 
+				color="#FFFFFF" 
+				alpha="0.7"/> 
+		</s:backgroundFill> 
+		<s:Label id="preloaderLabel" y="268" text="{resourceManager.getString('myResources', 'loading')}" fontSize="16" horizontalCenter="-1" verticalCenter="0" width="248" textAlign="center" verticalAlign="middle" height="30"/>
+	</s:BorderContainer>
+</mx:Panel>
